@@ -42,7 +42,10 @@ class Locator:
         else:
             data = self.data.filter(pl.col('index') == key)
 
-        return data
+        if isinstance(self.data, pl.DataFrame):
+            return DataFrame(data)
+        else:
+            return Series(data)
 
 class DataFrame(Base):
     def __init__(self, data: dict) -> None:

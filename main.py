@@ -11,19 +11,19 @@ df = pd.DataFrame(data)
 print(df.head())
 
 # Single label
-print(df.loc[4])
+print(df.loc[4].head())
 
 # List of labels
-print(df.loc[[4, 6], ['colA', 'colB']])
+print(df.loc[[4, 6], ['colA', 'colB']].head())
 
 # Slice
-print(df.loc[4:7])
+print(df.loc[4:7].head())
 
 # Boolean Series
 bool_series = pd.Series([True, False, True, False, True])
-print(df.loc[bool_series])
+print(df.loc[bool_series].head())
 
 # Callable function
-print(df.loc[lambda df: df['colA'] > 2])
+print(df.loc[lambda df: df['colA'] > 2].head())
 
 print(df[(df["test"].str.lower() == "abc") | (df["test"].str.lower() == "def")].head())
