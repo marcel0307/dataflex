@@ -22,10 +22,6 @@ class Base:
             return self.__class__(self.data.filter(key.data))
         else:
             raise TypeError(f"Indices must be str, list of str, or Series, not {type(key)}")
-
-    @property
-    def loc(self):
-        return Locator(self.data)
     
 class FallbackBase:
     def __init__(self, data):
@@ -63,27 +59,6 @@ class FallbackBase:
         return method
 
 
-class Locator(FallbackBase):
-    def __init__(self, data):
-        self.data = data
-
-    def __getitem__(self, key):
-        if isinstance(key, slice):
-            data = self.data.slice(key.start, key.stop - key.start)
-        elif isinstance(key, list):
-            data = self.data.filter(pl.col('index').is_in(key))
-        elif isinstance(key, (Series, PolarsPandasProxy, DataFrame)):
-            data = self.data.filter(key.data)
-        elif callable(key):
-            data = self.data.filter(key(self.data))
-        else:
-            data = self.data.filter(pl.col('index') == key)
-
-        if isinstance(self.data, pl.DataFrame):
-            return DataFrame(data)
-        else:
-            return Series(data)
-
 class DataFrame(Base):
     def __init__(self, data: dict) -> None:
         super().__init__(pl.DataFrame(data))
@@ -101,10 +76,6 @@ class StringMethods:
 class Series(Base):
     def __init__(self, data: list) -> None:
         super().__init__(pl.Series(data))
-
-    @property
-    def str(self):
-        return StringMethods(self)
 
     def __eq__(self, other):
         if isinstance(other, str):
@@ -165,6 +136,33 @@ class PolarsPandasProxy(FallbackBase):
     @property
     def loc(self):
         return Locator(self.data)
+    
+    @property
+    def str(self):
+        return StringMethods(self)
+
+
+class Locator(FallbackBase):
+    def __init__(self, data):
+        self.data = data
+
+    def __getitem__(self, key):
+        if isinstance(key, slice):
+            data = self.data.slice(key.start, key.stop - key.start)
+        elif isinstance(key, list):
+            data = self.data.filter(pl.col('index').is_in(key))
+        elif isinstance(key, PolarsPandasProxy):  # Change this line
+            data = self.data.filter(key.data)
+        elif callable(key):
+            data = self.data.filter(key(self.data))
+        else:
+            data = self.data.filter(pl.col('index') == key)
+
+        if isinstance(self.data, pl.DataFrame):
+            return DataFrame(data)
+        else:
+            return Series(data)
+            
 
 
 def DataFrame(data=None, index=None, columns=None, dtype=None, copy=False):
