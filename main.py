@@ -1,4 +1,13 @@
-import pandas as pd
+import custom_pandas as pd
+
+# Example usage
+custom_df = pd.DataFrame({'a': [1, 2, 3], 'b': [4, 5, 6]})
+
+# This will use the custom pandas method implemented using polars
+print(custom_df.head())
+
+# This will fallback to real pandas if the custom method is not implemented or fails
+print(custom_df.apply(lambda x: x ** 2))
 
 data = {
     'colA': [1, 2, 4, 7, 10],
@@ -10,8 +19,6 @@ df = pd.DataFrame(data)
 
 print(df.head())
 
-# Single label
-print(df.loc[4].head())
 
 # List of labels
 print(df.loc[[4, 6], ['colA', 'colB']].head())
