@@ -1,4 +1,4 @@
-import custom_pandas as pd
+import dataflex as pd
 
 # Example usage
 custom_df = pd.DataFrame({'a': [1, 2, 3], 'b': [4, 5, 6]})
