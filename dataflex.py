@@ -2,31 +2,34 @@
 
 import polars as pl
 import pandas as pd
-
-class Base:
-    def __init__(self, data):
-        self.data = data
-
-    def head(self, n=5):
-        return self.data.head(n)
     
-    def __getitem__(self, key):
-        if isinstance(key, str):
-            return Series(self.data[key])
-        elif isinstance(key, list):
-            if all(isinstance(item, str) for item in key):
-                return self.__class__({item: self.data[item] for item in key})
-            else:
-                raise TypeError("All elements in the list must be of type str")
-        elif isinstance(key, Series):
-            return self.__class__(self.data.filter(key.data))
+class BaseProxy:
+    def __init__(self, data):
+        if isinstance(data, dict):
+            self.data = pl.DataFrame(data)
+        elif isinstance(data, list):
+            self.data = pl.Series(data)
+        elif isinstance(data, (pl.DataFrame, pl.Series)):
+            self.data = data
+        elif isinstance(data, (pd.DataFrame, pd.Series)):
+            self.data = pl.from_pandas(data)
         else:
-            raise TypeError(f"Indices must be str, list of str, or Series, not {type(key)}")
-    
-class FallbackBase:
-    def __init__(self, data):
-        self.data = data
-
+            raise ValueError("Unsupported data type")
+        
+    def _fallback(self, operation, key, *args, **kwargs):
+        try:
+            result = operation(*args, **kwargs)
+            if isinstance(result, (pl.DataFrame, pl.Series)):
+                return BaseProxy(result)
+            return result
+        except (KeyError, TypeError, Exception) as e:
+            print(f"Fallback to pandas applied, due to Error {type(e)}: {e}")
+            pandas_data = self._convert_to_pandas()
+            result = getattr(pandas_data, key)(*args, **kwargs)
+            if isinstance(result, (pd.DataFrame, pd.Series)):
+                return BaseProxy(self._convert_to_polars(result))
+            return result
+        
     def _convert_to_pandas(self):
         if isinstance(self.data, pl.DataFrame):
             return self.data.to_pandas()
@@ -41,25 +44,27 @@ class FallbackBase:
         else:
             return data
 
+    def __repr__(self):
+        return repr(self.data)
+    
+    def __getitem__(self, key):
+        return self._fallback(lambda: self.data[key], key)
+
     def __getattr__(self, name):
         def method(*args, **kwargs):
-            try:
-                result = getattr(self.data, name)(*args, **kwargs)
-                if isinstance(result, (pl.DataFrame, pl.Series)):
-                    return self.__class__(result)
-                return result
-            except Exception as e:
-                print(f"Fallback to pandas applied, due to Error {type(e)}: {e}")
-                pandas_data = self._convert_to_pandas()
-                result = getattr(pandas_data, name)(*args, **kwargs)
-                if isinstance(result, (pd.DataFrame, pd.Series)):
-                    return self.__class__(self._convert_to_polars(result))
-                return result
-
+            return self._fallback(lambda: getattr(self.data, name)(*args, **kwargs), name, *args, **kwargs)
         return method
+    
+    @property
+    def loc(self):
+        return Locator(self.data)
+    
+    @property
+    def str(self):
+        return StringMethods(self)
 
 
-class DataFrame(Base):
+class DataFrame(BaseProxy):
     def __init__(self, data: dict) -> None:
         super().__init__(pl.DataFrame(data))
 
@@ -73,7 +78,7 @@ class StringMethods:
     def lower(self):
         return Series(self.series.data.str.to_lowercase())
 
-class Series(Base):
+class Series(BaseProxy):
     def __init__(self, data: list) -> None:
         super().__init__(pl.Series(data))
 
@@ -91,58 +96,8 @@ class Series(Base):
         if isinstance(other, Series):
             return Series(self.data & other.data)
 
-class PolarsPandasProxy(FallbackBase):
-    def __init__(self, data):
-        if isinstance(data, dict):
-            self.data = pl.DataFrame(data)
-        elif isinstance(data, list):
-            self.data = pl.Series(data)
-        elif isinstance(data, (pl.DataFrame, pl.Series)):
-            self.data = data
-        elif isinstance(data, (pd.DataFrame, pd.Series)):
-            self.data = pl.from_pandas(data)
-        else:
-            raise ValueError("Unsupported data type")
 
-    def _convert_to_pandas(self):
-        if isinstance(self.data, pl.DataFrame):
-            return self.data.to_pandas()
-        elif isinstance(self.data, pl.Series):
-            return pd.Series(self.data.to_list())
-        else:
-            return self.data
-
-    def _convert_to_polars(self, data):
-        if isinstance(data, pd.DataFrame) or isinstance(data, pd.Series):
-            return pl.from_pandas(data)
-        else:
-            return data
-
-
-    def __getitem__(self, key):
-        try:
-            result = self.data[key]
-            if isinstance(result, (pl.DataFrame, pl.Series)):
-                return PolarsPandasProxy(result)
-            return result
-        except (KeyError, TypeError):
-            pandas_data = self._convert_to_pandas()
-            result = pandas_data[key]
-            return PolarsPandasProxy(self._convert_to_polars(result))
-
-    def __repr__(self):
-        return repr(self.data)
-    
-    @property
-    def loc(self):
-        return Locator(self.data)
-    
-    @property
-    def str(self):
-        return StringMethods(self)
-
-
-class Locator(FallbackBase):
+class Locator(BaseProxy):
     def __init__(self, data):
         self.data = data
 
@@ -151,7 +106,7 @@ class Locator(FallbackBase):
             data = self.data.slice(key.start, key.stop - key.start)
         elif isinstance(key, list):
             data = self.data.filter(pl.col('index').is_in(key))
-        elif isinstance(key, PolarsPandasProxy):  # Change this line
+        elif isinstance(key, BaseProxy):  # Change this line
             data = self.data.filter(key.data)
         elif callable(key):
             data = self.data.filter(key(self.data))
@@ -168,9 +123,9 @@ class Locator(FallbackBase):
 def DataFrame(data=None, index=None, columns=None, dtype=None, copy=False):
     if isinstance(data, pd.DataFrame):
         data = pl.from_pandas(data)
-    return PolarsPandasProxy(data)
+    return BaseProxy(data)
 
 def Series(data=None, index=None, dtype=None, name=None, copy=False, fastpath=False):
     if isinstance(data, pd.Series):
         data = pl.from_pandas(data)
-    return PolarsPandasProxy(data)
+    return BaseProxy(data)
