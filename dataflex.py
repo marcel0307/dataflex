@@ -11,24 +11,18 @@ class BaseProxy:
             self.data = pl.Series(data)
         elif isinstance(data, (pl.DataFrame, pl.Series)):
             self.data = data
-        elif isinstance(data, (pd.DataFrame, pd.Series)):
-            self.data = pl.from_pandas(data)
         else:
             raise ValueError("Unsupported data type")
         
     def _fallback(self, operation, key, *args, **kwargs):
         try:
             result = operation(*args, **kwargs)
-            if isinstance(result, (pl.DataFrame, pl.Series)):
-                return BaseProxy(result)
-            return result
+            return BaseProxy(result)
         except (KeyError, TypeError, Exception) as e:
             print(f"Fallback to pandas applied, due to Error {type(e)}: {e}")
             pandas_data = self._convert_to_pandas()
             result = getattr(pandas_data, key)(*args, **kwargs)
-            if isinstance(result, (pd.DataFrame, pd.Series)):
-                return BaseProxy(self._convert_to_polars(result))
-            return result
+            return BaseProxy(self._convert_to_polars(result))
         
     def _convert_to_pandas(self):
         if isinstance(self.data, pl.DataFrame):
@@ -118,14 +112,8 @@ class Locator(BaseProxy):
         else:
             return Series(data)
             
-
-
 def DataFrame(data=None, index=None, columns=None, dtype=None, copy=False):
-    if isinstance(data, pd.DataFrame):
-        data = pl.from_pandas(data)
     return BaseProxy(data)
 
 def Series(data=None, index=None, dtype=None, name=None, copy=False, fastpath=False):
-    if isinstance(data, pd.Series):
-        data = pl.from_pandas(data)
     return BaseProxy(data)
